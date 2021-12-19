@@ -1,0 +1,1340 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage{verbatim}
+\usepackage[vmargin=3cm, hmargin=2cm, headheight=14pt]{geometry}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{color}
+\usepackage{amsmath, amssymb}
+\usepackage{longtable}
+\usepackage{lscape}
+\usepackage{natbib}
+\usepackage{xspace}
+\usepackage{booktabs}
+
+% Use Palatino (URW Palladio) for most of the text\ldots
+%\usepackage[sc]{mathpazo}
+\linespread{1.05} 
+
+% And Arial for the rest
+%\usepackage[scaled]{helvet}
+
+% sans serif caption (added by sina)
+\usepackage[font=sf, labelfont={sf}, margin=1cm]{caption}
+\usepackage[T1]{fontenc}
+\usepackage[latin1]{inputenc}
+
+% =======================================
+% Personalized layout
+\newcommand{\name}{$Audrey Yeo$}
+\newcommand{\mail}{$audrey.yeo@uzh.ch$}
+\newcommand{\versiondate}{\today}
+\newcommand{\client}{$Dr. Nina Kimmich$} % umlaute: \"a = ä
+\newcommand{\clinic}{$University Hospital of Zurich$} % umlaute: \"a = ä, specify precisely, not just USZ 
+\newcommand{\supervisor}{$Dr. Eva M. Furrer$} % umlaute: \"a = ä
+\newcommand{\projecttitle}{$Changes in the frequency and distribution of birth lacerations in women with subsequent births at the University Hospital Zurich (USZ)$}
+\newcommand{\subtitle}{STA490: Statistical Consulting \\%[.15cm]
+  {\Large $Pr. Leonhard Held$} \\[.25cm] 
+   {\large EBPI, Department of Biostatistics}}
+
+% =======================================
+
+\newcommand{\web}{www.biostat.uzh.ch $\bigotimes$}
+\newcommand{\grp}{Master Program in Biostatistics}
+\newcommand{\inst}{University of Zurich}
+\newcommand{\img}{\includegraphics[height=17mm, width = 53mm]{uzh_logo_e_pos}}
+\newcommand{\of}{of\xspace}
+
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}}
+\newcommand{\mytitle}[3]{
+\begin{center}
+\vspace*{-2.1cm}
+
+\HRule
+
+\vspace*{0.4cm}
+
+\begin{minipage}{0.4\textwidth}
+\thispagestyle{empty}
+\begin{flushleft}
+\hspace*{1cm}\img
+\end{flushleft}
+\end{minipage}
+\begin{minipage}{0.59\textwidth}
+\begin{flushleft} \large
+    \hspace*{3.8cm} \textsf{\grp} \\
+    \hspace*{3.8cm} \href{http://\web}{\textsf{\emph{\web}}}
+\end{flushleft}
+\end{minipage}
+
+\vspace*{0.4cm} \HRule
+
+\bigskip
+
+\textsf{\LARGE #2} \vspace*{0.5cm}
+
+\large{#1}
+
+\medskip
+}
+\large{\name \ (\textit{\mail})}
+
+\medskip
+
+Version \of \versiondate
+
+\end{center}
+
+\medskip
+% Headers and footers
+\fancypagestyle{standard}{}
+\fancyhf{}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyfoot[c]{\thepage}
+\fancyfoot[l]{\textsf{\name}, \href{\mail}{\textsf{\emph{\mail}}}}
+\fancyfoot[r]{\textsf{\versiondate}}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[c]{}
+\fancyhead[l]{\textsf{\grp}}
+\fancyhead[r]{\textsf{\inst}}
+}
+
+% =======================================
+% bibliography
+\bibliographystyle{ims}
+
+% =======================================
+% specific options for knitR:
+%   -- saves all produced plots into a subfolder called 'plots'
+%   -- does not include R code in the output file
+%   -- suppresses output from R
+% find all options: https://yihui.name/knitr/options/
+
+<<include=FALSE>>=
+library(knitr)
+opts_chunk$set(
+fig.path='plots/p', echo = FALSE, results='hide', cache=FALSE
+)
+@
+% =======================================
+% my latex commands
+\newcommand{\prog}[1]{\textsf{#1}}
+\newcommand{\pkg}[1]{\texttt{#1}}
+
+\begin{document}
+
+\pagestyle{standard}
+\mytitle{\projecttitle\\[.25cm] Analysis for \client, \clinic \\[.25cm] Supervision by \supervisor}{\subtitle}
+
+\bigskip
+
+%\hrule
+%\pagebreak
+
+
+% =======Some Initial settings for R==============
+<<setup, include=FALSE, echo=FALSE>>=
+library(tableone) # for Table 1 functions
+library(xtable) # formatting tables and generating the tex code
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(vcd)
+library(mgcv)
+library(ggmosaic)
+library(plyr)
+library(tableone)
+library(dplyr)
+library(janitor)
+library(RColorBrewer)  # scale_colour_manual(values = c(Republican = "red", Democratic = "blue"))
+library(viridis) # viridis::scale_fill_viridis()
+library(plyr)
+library(cowplot) #plot_grid(iris1, iris2, labels = "AUTO")
+library(kableExtra)
+if (utils::packageVersion("ggplot2") >= "3.2.1.9000") {
+  default_guide <- ggplot2::waiver()
+} else {
+  default_guide <- "none"
+}
+
+ggplot2::continuous_scale(
+  ..., 
+  guide = default_guide
+)
+# devtools::install_github('rmcd1024/ggmosaic', ref="ggplot_3.3.0-scales/fix")
+# devtools::install_github('haleyjeppson/ggmosaic')
+# remotes::install_github('haleyjeppson/ggmosaic' )
+## Additional settings
+cols <- brewer.pal(3, "Set1")
+options(width = 85, digits = 4, show.signif.stars=FALSE)
+alpha <- 0.05
+qa <- qnorm(1 - alpha / 2)
+
+## Import Data
+tab <- read_excel("../data/Datensatz29.04.2019.xlsx")
+
+## Data Preparation
+tab %>% 
+   mutate(Tear1_code = case_when(
+     Tear1 == "Damm intakt" ~ "I",
+     Tear1 == "Labienriss" ~ "L",
+     Tear1 == "Vaginalriss" ~ "V",
+     Tear1 == "Paraklitoralriss" ~ "P",
+     Tear1 == "Dammriss I+II" ~ "P1+2",
+     Tear1 == "Dammriss III/V" ~ "P3+4",
+     Tear1 == "Epi. mediolateral" ~ "E")) %>% 
+  mutate(Tear2_code = case_when(
+     Tear2 == "Damm intakt" ~ "I",
+     Tear2 == "Labienriss" ~ "L",
+     Tear2 == "Vaginalriss" ~ "V",
+     Tear2 == "Paraklitoralriss" ~ "P",
+     Tear2 == "Dammriss I+II" ~ "P1+2",
+     Tear2 == "Dammriss III/V" ~ "P3+4",
+     Tear2 == "Epi. mediolateral" ~ "E")) %>% 
+  mutate(Tear3_code = case_when(
+     Tear3 == "Damm intakt" ~ "I",
+     Tear3 == "Labienriss" ~ "L",
+     Tear3 == "Vaginalriss" ~ "V",
+     Tear3 == "Paraklitoralriss" ~ "P",
+     Tear3 == "Dammriss I+II" ~ "P1+2",
+     Tear3 == "Dammriss III/V" ~ "P3+4",
+     Tear3 == "Epi. mediolateral" ~ "E")) %>% 
+  mutate(Fetalposition = case_when( #we change fetal position descriptions into codes which are anatomically based
+    Fetalposition == "KINDLAGE01" ~ "DA_L",
+    Fetalposition == "KINDLAGE02" ~ "DA_R",
+    Fetalposition == "KINDLAGE03" ~ "DP_L",
+    Fetalposition == "KINDLAGE04" ~ "DP_R",
+    Fetalposition == "KINDLAGE09" ~ "FACE",
+    Fetalposition == "KINDLAGE17" ~ "FOREHEAD" )) %>% 
+  mutate(CTG = case_when(
+    CTG == "CTGFETAL01" ~ "Physiol",
+    CTG == "CTGFETAL02" ~ "Suspic",
+    CTG == "CTGFETAL03" ~ "Path" )) %>% 
+  mutate(Birthmode = case_when(
+    Birthmode == "GEBMODUS01" ~ "Spontaneous",
+    Birthmode == "GEBMODUS02" ~ "Spon. Kristeller",
+    Birthmode == "GEBMODUS04" ~ "Vacuum" )) %>% 
+  rename(replace = c("ZASID" = "ID")) -> tab_code1_11 #4127 rows, There are 4127 births
+dim(tab_code1_11)
+
+# Remove parity five and higher births, making sure that there are at least two births per women after removing
+tab_code1_11 %>%  
+  filter(Parity >= 5) -> tab5
+dim(tab5)
+tab_code1_11 %>%  
+  filter(Parity <= 4) -> tab4
+par5ids <- unique(tab5$ID)
+length(par5ids)  #60 unique IDs in Par 5 and above
+par5nosbirth<-numeric(0)
+for (i in 1:length(par5ids))
+  {par5nosbirth[i] <- dim(tab_code1_11[tab_code1_11$ID==par5ids[i],1])[1]} #number of IDs in Par5 that appear in the entire data frame which shows number of other births these parity 5 women have
+sum(par5nosbirth==2) # 33 = number of women for which there are two births, one of which is parity 5
+idstoremove<-par5ids[par5nosbirth==2] # 33 IDs to remove are the IDs that have 2 births of the Par 5 group. As such we removed 66 rows or births in the data set. Thus we have remaining 4127-66 = 4061 births in the Par 1 to 11 groups. 
+tab_code1_11 %>% 
+  filter(!ID %in% idstoremove) -> tab_code1_11_transition
+tab_code1_11_transition %>% 
+  filter(Parity<5) -> tab_code #we anyway removed the par 5 and below births
+# now all in the tab_code are women who have at least 2 births in the study population, excluding those of Parity 5 and above.
+dim(tab_code) # there are 4027 births now
+
+## concatenate tear patterns
+tab_code %>% 
+  mutate(Tear1_code = factor(Tear1_code, levels=c("I","E","P1+2","P3+4","V","L","P"), ordered=TRUE)) %>% 
+  mutate(Tear2_code = factor(Tear2_code, levels=c("I","E","P1+2","P3+4","V","L","P"), ordered=TRUE)) %>% 
+mutate(Tear3_code = factor(Tear3_code, levels=c("I","E","P1+2","P3+4","V","L","P"), ordered=TRUE)) -> tab_code
+sortall_tears <- function(vec){ paste(sort(vec), collapse ="") }
+
+tab_code$all_tears<-apply(tab_code[,23:25],1,sortall_tears)
+
+tab_code %>% 
+  mutate(tab_code$all_tears) -> tab_code # We add all_tears to the main data frame
+(whichall_tears<-unique(tab_code$all_tears)) #what are the 28 different all_tears
+(noofall_tears<-sort(table(tab_code$all_tears),decreasing=TRUE)) #count them
+dim(noofall_tears)
+
+# renaming tear patterns
+tab_code %>% 
+  mutate(all_tears = case_when(
+    all_tears == "P1+2" ~ "P1+2", 
+    all_tears == "I" ~ "I",
+    all_tears == "E" ~ "E",
+    all_tears == "P1+2V" ~ "P1+2V",
+    all_tears == "L" ~ "L",
+    all_tears == "V" ~ "V",
+    all_tears == "LP1+2" ~ "P1+2L", 
+    all_tears == "LV" ~ "VL",
+    all_tears == "EV" ~ "EV",
+    all_tears == "LP1+2V" ~ "P1+2VL",
+    all_tears == "PP1+2" ~ "P1+2P", 
+    all_tears == "EL" ~ "EL",
+    all_tears == "P3+4" ~ "P3+4", 
+    all_tears == "P" ~ "P",
+    all_tears == "PP1+2V" ~ "P1+2PV",
+    all_tears == "PV" ~ "PV",
+    all_tears == "LPP1+2" ~ "P1+2LP",
+    all_tears == "LPV" ~ "PVL",
+    all_tears == "LP" ~ "PL",
+    all_tears == "ELV" ~ "EVL",
+    all_tears == "EP3+4" ~ "P3+4E",
+    all_tears == "P3+4V" ~ "P3+4V",
+    all_tears == "EP" ~ "EP",
+    all_tears == "EP3+4V" ~ "P3+4EV",
+    all_tears == "EPV" ~ "PVE", 
+    all_tears == "LP3+4" ~ "P3+4L", 
+    all_tears == "LP3+4V" ~ "P3+4VL",
+    all_tears == "PP3+4V" ~ "P3+4PV")) -> tab_code
+
+# This frequency table aided the construction of ordered factors for the final dataset
+tt28<-addmargins(xtabs(~all_tears+Parity, data= tab_code), margin=2)
+tt28 <- tt28[order(tt28[,5], decreasing=T),]
+tt28
+dim(tt28) #28 unique tears to check
+tt10 <- tt28[1:10,] 
+tt10
+
+## Final Dataset
+
+tab_code$all_tears = factor(tab_code$all_tears, levels=c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL", "P1+2P", "EL", "P3+4", "P", "P1+2PV", "PV", "P1+2LP", "PVL", "PL", "EVL", "P3+4E", "P3+4V", "EP", "P3+4EV", "PVE", "P3+4L", "P3+4VL", "P3+4PV"), ordered=TRUE)
+unique(tab_code$all_tears)
+#View(tab_code)
+
+# long format
+tab_code %>% 
+  dplyr::select(-c(Tear1, Tear2, Tear3)) -> tab_code2 # we have to get rid of these columns first before 
+#...creating a long format
+gather(tab_code2, Tear_values, Tear_code, Tear1_code, Tear2_code, Tear3_code, na.rm= TRUE, convert = FALSE) -> tab_code_long #this is one row per tear
+dim(tab_code_long)
+
+# code as Tear names format
+tab_code %>% 
+  dplyr::select(ID, Parity, all_tears) -> tab_concode 
+#View(tab_concode)
+
+# data set for top 10 tear patterns
+u_all_tears_top10 <- c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL")
+u_all_tears_top10 <- factor(u_all_tears_top10 , levels=c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL"), ordered=TRUE)
+u_all_tears_top5 <- c("P1+2", "I", "E", "P1+2V", "L")
+u_all_tears_top5 <- factor(u_all_tears_top5 , levels=c("P1+2", "I", "E", "P1+2V", "L", ordered=TRUE))
+tab_code %>% 
+  filter(all_tears %in% u_all_tears_top10) %>% 
+  as.data.frame() -> tab_code_top10all_tears
+View(tab_code_top10all_tears)
+
+# data set for top 5 tear patterns
+tab_code %>% 
+  filter(all_tears %in% u_all_tears_top5) %>% 
+  as.data.frame() -> tab_code_top5all_tears
+View(tab_code_top5all_tears)
+@
+
+
+%=====End of Initial Settings for R======
+
+
+% =======================================
+\section{Introduction} \label{sec:intro}
+% =======================================
+The care of mothers in obstetric follows into the long-term consequences of birth lacerations during child birth. Lacerations are common invaginal births and have side effects of pain, urinal and bowel incontinence, which impacts on the mother's activities of daily living, and the care for her child. The motivtion of this study is to improve the knowledge on birth lacerations during childbirth and its impact factors to inform clinical practice for example, in patient counseling. While birth lacerationsn occur in different areas of the perineum, such as labial, vaginal, paraclitorial and cervical, laceraations of different degrees are also known. Impact factos are such as parity, define as the number of births of a woman that reach viable gestatational age of 37 weeks from the first mentrsuation. furthermore, sustained lacerations in the past may influence future lacerations Other maternal, obstetrics and neonatal factors are considered impact factors in this study.
+
+% =======================================
+\section{Research Questions} \label{sec:questions}
+% =======================================
+\begin{enumerate}
+   \item Evaluation of the frequency and distribution of the different types of birth lacerations according to parity (within the parity groups).
+   \item Evaluation of the factors influencing the distribution or the presence of the different lacerations in the parity groups.
+   \item Evaluation of the influence of the sustained laceration pattern in the past on the pattern in a subsequent birth.
+\end{enumerate}
+
+% =======================================
+\section{Methods} \label{sec:methods}
+% =======================================
+The method used in this study is frequency plots and mosaic plots. It is important to note that the entire width of the mosaic plot represents a proportion of 1 along the x-axis and this is also the same for the y-axis. ggplot and put this in visualisation method 
+% =======================================
+\subsection*{Study Design} \label{subsec:design}
+% =======================================
+\subsubsection*{Type of study}
+This was a descriptive study of continuous and categorical outcome variables.
+
+\subsubsection*{Study population}
+The study included all vaginal births by women above age 18 at the University Hospital of Zurich between 2005-2016 with at least two singleton child births (no twins), whose birth is at term (at least 37 weeks) and where births are of vertex presentations and there are no malformations detected before birth. Births outcome women of the data set appear at least twice.
+
+<<dc_tabsetup, echo=FALSE>>=
+dc_tab1 <- matrix(c("Parity", "Age", "BMI", "Ethnicity", "Age of gestation", "Birth mode", "Analgesia", "Duration of 2nd stage and Duration of pushing phase", "Blood loss", "Quality of fetal heart trace", "Fetal position in the birth cancal", "Fetal weight", "Head circumference", "Tear 1, Tear 2, and Tear 3"), ncol=1)
+dc_tab1
+                   
+dc_tab2 <- matrix(c("number of births", "Maternal Age in years", "kg/m2", "1 = caucasian, 2 =  non-caucasian", "days", "spontaneous, spontaneous with Kristeller, vacuum", "1 =  Epidural, 2 = Other, 3 = none" , "minutes", "mL", "physiological (physiol), suspicious (suspic), pathological(path)", "Dorso-Anterior Left (DA_L), Dorso-Anterior Right (DA_R), Dorso-Posterior Left (DP_L), Dorso-Posterior Right (DP_R), Face, Forehead", "grams", "cm", "one of 7 tear types"), ncol=1)
+dc_tab2
+
+dc_tab <- cbind(dc_tab1, dc_tab2)
+colnames(dc_tab) <- c("Impact factors", "Units of measurement")
+dc_tab
+@
+
+\subsubsection*{Data collection}
+The table seen in ~ref\label{dc_tab} show 13 outcome variables and their units of measurement.
+\begin{table}\label{dc_tab}
+\tiny
+<<dc_tab, results='asis', warning=FALSE, message=FALSE, error=FALSE, echo=FALSE>>=
+knitr::kable(dc_tab, row.names = FALSE, booktabs = TRUE, format = "latex")
+@ 
+\end{table}
+% ^[Seven types of tears were recorded: 
+% \begin{}
+% \item Labial tear (Labienriss)
+% \item Vaginal tear (Vaginalriss)
+% \item Paraklitoral tear (Paraklitoralriss)
+% \item Perineal tear grade I+II (low grade) (Dammriss I+II)
+% \item Perineal tear grade III/V (high grade) (Dammriss III/V) 
+% \item Episiotomy (Episiotomie mediolateral)
+% \begin{enumerate}]
+
+<<tear_group_codedsetup, echo=FALSE>>=
+tear_group_coded <- tibble("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL", "P1+2P", "EL", "P3+4", "P", "P1+2PV", "PV", "P1+2LP", "PVL", "PL", "EVL", "P3+4E", "P3+4V", "EP", "P3+4EV", "PVE", "P3+4L", "P3+4VL", "P3+4PV")
+tear_group_coded %>% 
+  t() -> tear_group_coded
+@
+
+\newpage
+
+\subsubsection*{Primary and secondary outcomes}
+Tear combinations are primary outcomes. 
+\begin{table}
+<<tear_group_coded, results='asis', warning=FALSE, message=FALSE, error=FALSE, echo=FALSE>>=
+knitr::kable(tear_group_coded, row.names = TRUE, booktabs = TRUE, format = "latex")
+@
+\end{table}
+
+\subsubsection*{Data Preparation}
+Data was read in excel format. German terms were translated to english. Tear names in English were then abbreviated into tear codes. Each birth can have up to three tears. The tear codes representing each tear were concatenated and will be described as tear "patterns" which can be singular, double or triple tears. The data frame was then converted to long format for graphical and analytical reasons. Several revisions on the analytical side prompted revisions by the client due to checks for clinically and or meaningful data.  These were to ensure:
+\begin{enumerate}
+  \item no records appeared with the same tear twice
+  \item no records with intact tear as an entry with an actual tear of the same parity
+  \item no records with Epistomy and Perineal 1+2 tears
+  \item no record with patient ID appears twice with same parity.
+\end{enumerate}
+
+Possible tear codes come from the 7 tear categories including "I" for "Intact" in table ~\ref{t_c} are a basis of tear patterns. The table ~\ref{tear_patternsab} illustrates how tear codes were interpreted as tear patterns. 
+<<tear_tabsetup, results='asis', warning=FALSE, message=FALSE, error=FALSE, echo=FALSE>>=
+tear_tab1 <- matrix(c("Intact", "Labial tear", "Vaginal tear", "Paraclitoral tear", "Perineal grade 1+2", "Perineal grade 3+4", "Epistomy"), ncol=1)
+tear_tab2 <- matrix(c("I", "L", "V", "P", "P1+2", "P3+4", "E"), ncol= 1)
+tear_tab <- cbind(tear_tab1, tear_tab2)
+colnames(tear_tab) <- c("Tear name", "Tear code") # DATA COLLECTION
+@
+\begin{table}
+\caption{Tear names and codes}\label{t_c}
+<<tear_tab, results="asis">>=
+knitr::kable(tear_tab, row.names = FALSE, booktabs = TRUE, format = "latex")
+@
+\end{table}
+
+<<tear_groupsetup, warning=FALSE, echo=FALSE>>=
+tear_group1 <- matrix(c("Labial tear, Vaginal tear, Perineal grade 1+2 tear"), ncol=1)
+tear_group2 <- matrix(c("P1+2VL"))
+tear_group <- cbind(tear_group1, tear_group2)
+colnames(tear_group) <- c("Tear pattern", "Abbreviation used")
+tear_group <- t(tear_group)
+@
+\begin{table}
+\caption{Example of tear pattern}\label{tear_patternab}
+<<tear_group, results='asis'>>=
+knitr::kable(tear_group, row.names = FALSE, booktabs = TRUE, format = "latex")
+@
+\end{table}
+
+\subsubsection*{Descriptive Statistics and Simple Methods}
+
+\subsubsection*{Visualization Methods}
+Mosaic plots were used to address all Research Questions. Frequency plots were used as well. 
+
+% =======================================
+\section{Results} \label{sec:results}
+% =======================================
+The original dataset contained 4127 births of parity 1 to 11. It was observed that the number of births marketly decreased from parity 5 to 11. Every woman in the study had at least two births. When we removed women from parity5 and above, we ensured that the entire dataset had women who had at least two births. That is, the women of parity 5 and above, who had one other birth in parity 1 to 4, will have that birth removed. There are 60 women in parity 5 and above, meaning 60 women who gave birth at Parity 5 to 11. However, 33 of these women had exactly 2 births in the entire dataset, which means that if we removed parity 5 and above, these women would have one birth left in the Parity 1 to 4. These singular births from parity 1 to 4 were removed. 
+Once we remove women from Parity 5 and above who had at least two births in the dataset (33 of them), we have 4061 births in our study from Parity 1 to 11. Once we restrict this to births of Parity 1 to 4, or below 5, we have 4027 births in total or 34 were removed in the final data restriction. Even despite this cleaning of data, many births remain unaffected between parity 1 and 4 as seen in table. Most of the births still are of parity 2 as are seen in table ~\ref{tab_par1_11} and ~\red{tab_par1_4}
+\begin{table}
+\caption{Twenty-eight tear combinations}\label{tab_par1_11}
+\tiny
+<<tab_par1_11, results='asis', warning=FALSE, message=FALSE, error=FALSE, echo=FALSE>>=
+tab_par1_11 <- addmargins(xtabs(~Parity, data= tab_code1_11), margin=1)
+knitr::kable(tab_par1_11, row.names = FALSE, booktabs = TRUE, format = "latex")
+@ 
+\end{table}
+
+\begin{table}
+\caption{Twenty-eight tear combinations}\label{tab_par1_4}
+\tiny
+<<tab_par1_4, results='asis', warning=FALSE, message=FALSE, error=FALSE, echo=FALSE>>=
+tab_par1_4 <- addmargins(xtabs(~Parity, data= tab_code), margin=1)
+knitr::kable(tab_par1_4, row.names = FALSE, booktabs = TRUE, format = "latex")
+@ 
+\end{table}
+
+
+<<otherdfsetup, echo=FALSE>>=
+#Frequency tables
+# top 10 tear groups frequency table
+
+tab_code_top10all_tears %>% 
+  tabyl(Parity) %>% 
+  adorn_rounding(digits = 2) %>% 
+  rename(replace = c("all_tears" = "Top 10 Tear groups")) %>% 
+  arrange(desc(n))-> tabfretop10
+tabfretop10
+
+tab_code_top5all_tears %>%
+  group_by_at(vars(Parity, all_tears)) %>% 
+  tabyl(Parity) %>% 
+  adorn_rounding(digits = 2) -> tabfretop5_n
+tabfretop5_n
+
+# All tear groups frequency table
+tab_code %>% 
+  tabyl(all_tears) %>% 
+  adorn_rounding(digits = 2) %>% 
+  arrange(desc(n)) %>% 
+  rename(replace = c("all_tears" = "All Tear groups"))-> tabfre_all
+tabfre_all
+# top 5 tear groups frequency table
+tab_code_top5all_tears %>% 
+  tabyl(all_tears) %>% 
+  arrange(desc(n)) %>% 
+  adorn_rounding(digits = 2) %>% 
+  rename(replace = c("all_tears" = "Top 5 Tear groups"))-> tabfretop5
+tabfretop5
+@
+
+With parity 1 to 4, twenty-eight unique pattern of tears were observed and is ordered by highest to lowest frequency as ~\ref{tear_patterns}.
+\begin{table}
+\caption{Twenty-eight tear combinations}\label{tear_patterns}
+<<tear_patterns, results='asis', echo = TRUE>>=
+# tear_patterns <- tibble("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL", "P1+2P", "EL", "P3+4", "P", "P1+2PV", "PV", "P1+2PL", "PVL", "PL", "ELV", "P3+4E", "P3+4V", "EP", "P3+4EV", "EPV", "P3+4L", "P3+4VL", "P3+4PV")
+knitr::kable(tabfre_all, row.names = FALSE, booktabs = TRUE, format = "latex")
+@
+\end{table}
+
+% =======================================
+\section{Research question 1} \label{sec:results}
+% =======================================
+Further to restricting our data to parity 1 to 4, I observed that the top 10 tear groups had a large distribution of birth counts across the parities. I decided to answer research question 1 using the top 10 tear groups seen in ~\ref{tabfretop10_n}. Comparing the distribution of tear patterns of top 5 is questionable as seen in ~\ref{tabfretop5_n}.
+\begin{table}
+\caption{Top 10 tear groups across parity 1 to 4}\label{tabfretop10_n}
+<<tabfretop10_n, results = "asis">>=
+knitr::kable(tabfretop10_n, row.names = FALSE, booktabs = TRUE, format = "latex")
+@
+\begin{table}
+\caption{Top 5 tear groups across parity 1 to 4}\label{tabfretop5_n}
+<<tabfretop5_n, results = "asis">>=
+knitr::kable(tabfretop5_n, row.names = FALSE, booktabs = TRUE, format = "latex")
+@
+
+<<mosaic_top10all_tearssetup, eval = TRUE, echo=FALSE>>=
+# nina's order
+nina10 <- c("I", "E", "EV", "P1+2", "P1+2V", "P1+2VL", "P1+2VL", "V", "L", "VL")
+nina10 <- factor(levels=c("I", "E", "EV", "P1+2", "P1+2V", "P1+2L", "P1+2VL", "V", "L", "VL"), ordered=TRUE)
+nina5 <- c("I", "E", "EV", "P1+2", "P1+2V")
+nina5 <- factor(nina5 , levels=c("I", "E", "EV", "P1+2", "P1+2V"), ordered=TRUE)
+
+tab_code %>% 
+  filter(all_tears %in% nina10) %>% 
+  as.data.frame() -> tab_code_top10all_tearsnina
+
+
+#Stististician's order
+all_tears <- factor(tab_code$all_tears, levels=c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL", "P1+2P", "EL", "P3+4", "P", "P1+2PV", "PV", "P1+2LP", "PVL", "PL", "EVL", "P3+4E", "P3+4V", "EP", "P3+4EV", "PVE", "P3+4L", "P3+4VL", "P3+4PV"), ordered=TRUE)
+#Statistician's ordered dataset
+tab_code %>% 
+  mutate(all_tears) -> tab_code
+#Statistician's ordered top 10 and top 5 teaers
+u_all_tears_top10 <- c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL")
+u_all_tears_top10 <- factor(u_all_tears_top10 , levels=c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL"), ordered=TRUE)
+u_all_tears_top5 <- c("P1+2", "I", "E", "P1+2V", "L")
+u_all_tears_top5 <- factor(u_all_tears_top5 , levels=c("P1+2", "I", "E", "P1+2V", "L"), ordered=TRUE)
+#Statisticians top 10 tears' dataset
+tab_code %>% 
+  filter(all_tears %in% u_all_tears_top10) %>% 
+  as.data.frame() -> tab_code_top10all_tears
+
+@
+Below is the mosaic plot (~\ref{mosaic_top10_all_tearsnina} \& ~\ref{mosaic_top10_all_tears}) of the top 10 tear groups for parity 1 to 4. This addresses research question 1. 
+
+\begin{figure}
+\caption{Mosaic plot of tear patterns across parity 1 to 4}\label{mosaic_top10_alltearsnina}
+<<mosaic_top10all_tearsnina, results = "asis">>=
+nina10 <- factor(tab_code_top10all_tearsnina$all_tears, levels=c("I", "E", "EV", "P1+2", "P1+2V", "P1+2L", "P1+2VL", "V", "L", "VL"), ordered=TRUE)
+tab_code_top10all_tearsnina %>%   # this works well
+  ggplot() +
+  geom_mosaic(aes(x = product(nina10, Parity), fill = nina10)) + 
+  theme_minimal() +
+  ggplot2::labs(x = "Parity", y = "") +
+  ggtitle("All tears by Parity 1 to 4") +
+  theme(legend.position = "none", panel.grid.major = element_blank(), panel.grid.minor = element_blank()) -> mosaic_top10all_tearsnina
+mosaic_top10all_tearsnina ### yaaaaayyy
+@
+\end{figure}
+
+\begin{figure}
+\caption{Mosaic plot of tear patterns across parity 1 to 4}\label{mosaic_top10_alltears}
+<<mosaic_top10all_tears, results = "asis">>=
+all_tears_ordered <- factor(tab_code_top10all_tears$all_tears, levels=c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL"), ordered=TRUE) # for mosaic plots
+tab_code_top10all_tears %>%   # this works well
+  ggplot() +
+  geom_mosaic(aes(x = product(all_tears_ordered, Parity), fill = all_tears_ordered)) + 
+  theme_minimal() +
+  ggplot2::labs(x = "Parity", y = "") +
+  ggtitle("All tears by Parity 1 to 4") +
+  theme(legend.position = "none", panel.grid.major = element_blank(), panel.grid.minor = element_blank())  -> mosaic_top10all_tears
+mosaic_top10all_tears ### yaaaaayyy
+@
+
+
+<<tab_concode for rq2, include=FALSE, echo=FALSE>>=
+tab_code %>% 
+  dplyr::select(ID, Parity, all_tears) -> tab_concode #now we get concatenated columns or all_tears and important to remember that tab_code is per birth and tab_code_long is per tear (see below)  sometimes one has to write "dplyr" again. 
+# Create table for top 10 and top 5 all_tears
+@
+
+
+<<tab_concode_all for rq2, include=FALSE, echo=FALSE>>=
+tab_concode %>% #in tab_concode, we did not pre-filter the data to exclude those beyond Parity 5 inclusive
+  select(ID, Parity, all_tears)
+tab_concode %>% 
+  group_by(ID) %>% 
+  filter(Parity==1) %>% 
+  filter(all_tears %in% u_all_tears_top10) %>%
+  select(ID, all_tears, Parity) -> tab_concodepar1
+#checking the dimensions of Parity==1 a different way:
+tab %>% 
+  filter(Parity==1) %>% 
+  dplyr::count() #1368
+dim(tab_concodepar1) # There are indeed 1368 births from Parity 1.
+tab_concode %>% 
+  group_by(ID) %>% 
+  filter(Parity==2) %>% 
+  filter(all_tears %in% u_all_tears_top10) %>%
+ select(ID, all_tears, Parity) -> tab_concodepar2
+dim(tab_concodepar2)
+#checking the dimensions of Parity==2 a different way:
+tab %>% 
+  filter(Parity==2) %>% 
+  dplyr::count() #1735
+dim(tab_concodepar2) # There are indeed 1735 births from Parity 2
+inner_join(tab_concodepar1, tab_concodepar2, by="ID") -> tab_concodepar12
+tab_concodepar12 %>% 
+  rename(replace  = c("all_tears.x" = "all_tearsP1")) -> tab_concodepar12
+# R can't cope with a long command
+tab_concodepar12 %>% 
+  rename(replace = c("all_tears.y" = "all_tearsP2")) -> tab_concodepar12
+tab_concodepar12 %>% 
+  select (-c("Parity.x", "Parity.y"))-> tab_concodepar12
+tab_concodepar12
+dim(tab_concodepar12) # There are 13129births from Parity 1 that appear also in Parity 2
+# tab_concode %>% #in tab_concode, we did not pre-filter the data to exclude those beyond Parity 5 inclusive
+#   select(ID, Parity, all_tears)
+# tab_concode %>% 
+#   group_by(ID) %>% 
+#   filter(Parity==1) %>% 
+#   select(ID, all_tears, Parity) -> tab_concodepar1
+# #checking the dimensions of Parity==1 a different way:
+# tab %>% 
+#   filter(Parity==1) %>% 
+#   dplyr::count() #1368
+# dim(tab_concodepar1) # There are indeed 1368 births from Parity 1.
+# tab_concode %>% 
+#   group_by(ID) %>% 
+#   filter(Parity==2) %>% 
+#  select(ID, all_tears, Parity) -> tab_concodepar2
+# dim(tab_concodepar2)
+# #checking the dimensions of Parity==2 a different way:
+# tab %>% 
+#   filter(Parity==2) %>% 
+#   dplyr::count() #1735
+# dim(tab_concodepar2) # There are indeed 1735 births from Parity 2
+# inner_join(tab_concodepar1, tab_concodepar2, by="ID") -> tab_concodepar12
+# tab_concodepar12 %>% 
+#   rename(replace  = c("all_tears.x" = "all_tearsP1")) -> tab_concodepar12
+# # R can't cope with a long command
+# tab_concodepar12 %>% 
+#   rename(replace = c("all_tears.y" = "all_tearsP2")) -> tab_concodepar12
+# tab_concodepar12 %>% 
+#   select (-c("Parity.x", "Parity.y"))-> tab_concodepar12
+# tab_concodepar12
+# dim(tab_concodepar12) # There are 13129births from Parity 1 that appear also in Parity 2
+
+tab_concode %>% 
+  group_by(ID) %>% 
+  filter(Parity==3) %>% 
+ select(ID, all_tears, Parity) -> tab_concodepar3
+dim(tab_concodepar3) # 741 x 3
+inner_join(tab_concodepar2, tab_concodepar3, by="ID") -> tab_concodepar23
+tab_concodepar23 %>% 
+  rename(replace  = c("all_tears.x" = "all_tearsP2")) -> tab_concodepar23
+# R can't cope with a long command
+tab_concodepar23 %>% 
+  rename(replace = c("all_tears.y" = "all_tearsP3")) -> tab_concodepar23
+tab_concodepar23 %>% 
+  select (-c("Parity.x", "Parity.y"))-> tab_concodepar23
+dim(tab_concodepar23)
+tab_concodepar23 # There are 617 births of Parity 2 that also appear in Parity 3
+
+tab_concode %>% 
+  group_by(ID) %>% 
+  filter(Parity==4) %>% 
+ select(ID, all_tears, Parity) -> tab_concodepar4
+dim(tab_concodepar4) #102 x 3
+inner_join(tab_concodepar3, tab_concodepar4, by="ID") -> tab_concodepar34
+tab_concodepar34 %>% 
+  rename(replace  = c("all_tears.x" = "all_tearsP3")) -> tab_concodepar34
+# R can't cope with a long command
+tab_concodepar34 %>% 
+  rename(replace = c("all_tears.y" = "all_tearsP4")) -> tab_concodepar34
+tab_concodepar34 %>% 
+  select (-c("Parity.x", "Parity.y"))-> tab_concodepar34
+tab_concodepar34 
+dim(tab_concodepar34) 
+inner_join(tab_concodepar12, tab_concodepar3, by= "ID") -> tab_concodepar123
+dim(tab_concodepar123)
+
+inner_join(tab_concodepar12, tab_concodepar34, by="ID") -> tab_concodepar1234
+tab_concodepar1234 # this is what the lattice plot can use! since lattice doesn't work with this R version, will check out ggplot2's capabilities!
+dim(tab_concodepar1234) 
+dim(tab_concodepar1234)
+str(dim(tab_concodepar1234))
+class(dim(tab_concodepar1234))
+@
+
+% =======================================
+\section{Research Question 2} \label{rq2}
+% =======================================
+There is a high proportion of P1+2 tears and Intact (or no tears) in parity. As I see, the trajectory towards parity 2 with these predispositions yields similar proportions of Intact, Labial and P1+2 tears for the former. A P1+2 tear in the first parity yields a high proportion of the Episiotomy cuts or the same tear  and lesser in proportion of the P1+2V tears, see ~\ref{mosaic_par12_top10all_tears}.
+\begin{table}
+\caption{Twenty-eight tear combinations frequency}\label{mosaic_par12_top10all_tears}
+<<mosaic_par12_top10all_tears, results='asis', echo = FALSE>>=
+# all_tearsP1 <- factor(tab_concodepar12$all_tearsP1, levels=c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL"), ordered=TRUE) # for mosaic plots
+# all_tearsP2 <- factor(tab_concodepar12$all_tearsP2, levels=c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL"), ordered=TRUE) # for mosaic plots
+# tab_concodepar12$all_tearsP1 <- factor(tab_concodepar12$all_tearsP1, levels = u_all_tears_top10, ordered = TRUE)
+# tab_concodepar12$all_tearsP2 <- factor(tab_concodepar12$all_tearsP2, levels = u_all_tears_top10, ordered = TRUE)
+
+tab_concodepar12 %>% 
+  # filter(all_tearsP1 %in% u_all_tears_top10) %>% 
+  # filter(all_tearsP2 %in% u_all_tears_top10) %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(all_tearsP1, all_tearsP2), fill = all_tearsP1)) + 
+  theme_minimal() +
+  ggplot2::labs(x = "Parity 1", y = "Parity 2", title = "Subsequent births 1 and 2") +
+  theme(legend.position = "", panel.grid.major = element_blank(), panel.grid.minor = element_blank()) -> mosaic_par12_top10all_tears
+ mosaic_par12_top10all_tears
+ 
+ # tab_concodepar12 %>% 
+ #  # filter(all_tearsP1 %in% u_all_tears_top10) %>% 
+ #  # filter(all_tearsP2 %in% u_all_tears_top10) %>% 
+ #  ggplot() +
+ #  geom_mosaic(aes(x = product(all_tearsP2), fill = all_tearsP1, conds = product(all_tearsP1))) + 
+ #  theme_minimal() +
+ #  labs(x = "Parity 1", y = "Parity 2", title = "Subsequent births 1 and 2") +
+ #  theme(legend.position = "", panel.grid.major = element_blank(), panel.grid.minor = element_blank()) -> mosaic_par12_top10all_tears
+ # mosaic_par12_top10all_tears
+@
+\end{table}
+
+
+<<nina10setup, echo=FALSE>>=
+nina10 <- c("I", "E", "EV", "P1+2", "P1+2V", "P1+2VL", "P1+2VL", "V", "L", "VL")
+nina10 <- factor(levels=c("I", "E", "EV", "P1+2", "P1+2V", "P1+2L", "P1+2VL", "V", "L", "VL"), ordered=TRUE)
+nina5 <- c("I", "E", "EV", "P1+2", "P1+2V")
+nina5 <- factor(nina5 , levels=c("I", "E", "EV", "P1+2", "P1+2V"), ordered=TRUE)
+@
+
+Nina's subsequent birth
+\begin{table}
+\caption{Twenty-eight tear combinations frequency}\label{mosaic_par12_top10all_tears}
+<<mosaic_par12_top10all_tearsnina, results='asis', echo = TRUE>>=
+tab_concodepar12 %>% 
+  # filter(all_tearsP1 %in% nina10) %>% 
+  # filter(all_tearsP2 %in% nina10) %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(all_tearsP1, all_tearsP2, fill = all_tearsP1))) + 
+  theme_minimal() +
+  labs(x = "Parity 1", y = "Parity 2", title = "Subsequent births 1 and 2") +
+  theme(legend.position = "", panel.grid.major = element_blank(), panel.grid.minor = element_blank()) -> mosaic_par12_top10all_tearsnina
+ mosaic_par12_top10all_tearsnina
+@
+\end{table}
+
+A predisposition of Intact tear in parity 2, leads to a high proportion of Intact tears in parity 3 and a smaller yield of P1+2 tears. The second most frequent tear is P1+2 in parity 2, which yields a high proportion of the same in the subsequent parity of 3. Episiotomies occur in few proportions in general but once there is a predisposition of the same, tend to appear again for the subsequent birhts ~\ref{mosaic_par23_top10all_tear}. This pattern is repeated for the subsequent births of Parity 3 and 4 as seen in ~\ref{mosaic_par34_top10all_tear}.
+\begin{table}
+\caption{Twenty-eight tear combinations frequency}\label{mosaic_par23_top10all_tears}
+<<mosaic_par23top10_all_tears, results='asis', echo = FALSE>>=
+tab_concodepar23 %>% 
+  filter(all_tearsP2 %in% u_all_tears_top10) %>% 
+  filter(all_tearsP3 %in% u_all_tears_top10) %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(all_tearsP2, all_tearsP3), fill = all_tearsP2)) + 
+  theme_minimal() +
+  labs(x = "Parity 2", y = "Parity 3", title = "Subsequent births 2 and 3") +
+  theme(legend.position = "", panel.grid.major = element_blank(), panel.grid.minor = element_blank()) -> mosaic_par23top10_all_tears
+mosaic_par23top10_all_tears
+@
+\end{table}
+
+
+\begin{table}
+\caption{Twenty-eight tear combinations frequency}\label{mosaic_par34_top10all_tears}
+<<mosaic_par34top10_all_tears, results='asis', echo = FALSE>>=
+tab_concodepar34 %>% 
+  filter(all_tearsP3%in% u_all_tears_top10) %>% 
+  filter(all_tearsP4 %in% u_all_tears_top10) %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(all_tearsP3, all_tearsP4), fill = all_tearsP3)) + 
+  theme_minimal() +
+  labs(x = "Parity 3", y = "Parity 4", title = "Subsequent births 3 and 4") +
+  theme(legend.position = "", panel.grid.major = element_blank(), panel.grid.minor = element_blank()) -> mosaic_par23top10_all_tears
+mosaic_par23top10_all_tears
+@
+\end{table}
+
+
+%Research question 3
+<<Rq2tab, echo=FALSE>>=
+CreateTableOne(
+  vars = c("MaternalAge", "BMI"), 
+  strata = "Parity", 
+  data = tab_code, 
+  factorVars = c("Parity")) %>% 
+  print(
+    test = TRUE, 
+    showAllLabels = FALSE, 
+    explain = FALSE, 
+    nonnormal =,
+    printToggle = FALSE, includeNA= FALSE) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rowid_to_column(var="Parity") -> M_bmi_age
+M_bmi_age
+
+CreateCatTable(
+  vars = c("Ethnicitycoded"), 
+  strata = "Parity", 
+  data = tab_code, 
+  includeNA=FALSE, 
+  test=FALSE) %>% 
+  print(
+    test = FALSE, 
+    showAllLabels = TRUE, 
+    explain = TRUE, 
+    nonnormal =, 
+    printToggle = FALSE) %>% 
+  t() %>% 
+  as.data.frame()  %>% 
+  rowid_to_column(var="Parity" ) %>% 
+  dplyr::rename( `Non-caucasian` = `Ethnicitycoded = 2 (%)`)-> M_eth
+
+M_bmi_age_eth <- inner_join(M_bmi_age, M_eth, by="Parity")
+M_bmi_age_eth %>% 
+  dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_bmi_age_eth
+
+CreateTableOne(
+  vars = c("GestationalAge"), 
+  strata = "Parity", 
+  data = tab_code, 
+  factorVars = c( "Parity")) %>% 
+  print(test = FALSE, 
+  showAllLabels = FALSE, 
+  explain = FALSE, 
+  nonnormal = c("BMI", "MaternalAge"), 
+  printToggle = FALSE) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rowid_to_column(var = "Parity") %>% 
+  dplyr::rename( `Gestational age` = GestationalAge) -> Obs_age
+M_bmi_age_eth_obs <- inner_join(M_bmi_age_eth, Obs_age, by="Parity")
+M_bmi_age_eth_obs %>% 
+  dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_bmi_age_eth_obs
+
+CreateTableOne(
+  vars = c("Birthmode"), 
+  strata = "Parity", 
+  data = tab_code, 
+  factorVars = c( "Parity")) %>% 
+  print(test = FALSE, 
+        showAllLabels = FALSE, 
+        explain = FALSE, 
+        nonnormal = c("BMI", "MaternalAge"), 
+        printToggle = FALSE) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  select(-Birthmode) %>% 
+  rowid_to_column(var = "Parity") -> Obs_bm
+inner_join(M_bmi_age_eth_obs, Obs_bm, by="Parity") -> M_Obs
+M_Obs %>% 
+dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_Obs
+CreateCatTable(
+  vars = "Analgesia coded", 
+  strata = "Parity", 
+  data = tab_code, 
+  includeNA=FALSE, 
+  test=FALSE) %>% 
+  print(test = FALSE, 
+        showAllLabels = FALSE, 
+        explain = FALSE, 
+        nonnormal =, 
+        printToggle = FALSE) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  select(-`Analgesia coded`) %>% 
+  rowid_to_column(var = "Parity") -> Obs_analgesia
+M_Obs_analgesia <- inner_join(M_Obs, Obs_analgesia, by="Parity")
+M_Obs_analgesia %>% 
+  dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_Obs_analgesia
+
+CreateTableOne(
+  vars = c("Duration2ndstage", "Pushingduration"), 
+  strata = "Parity", 
+  data = tab_code, 
+  includeNA=FALSE, 
+  factorVars = c( "Parity")) %>% 
+  print(test = FALSE, 
+  showAllLabels = FALSE, 
+  explain = FALSE, 
+  nonnormal = c("BMI", "MaternalAge"), 
+  printToggle = FALSE) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rowid_to_column(var="Parity") %>% 
+  dplyr::rename(`Duration 2nd stage` = `Duration2ndstage`) %>% 
+  dplyr::rename(`Pushing duration`= `Pushingduration`) -> Obs_pushing_2ndstage
+M_pushing <- inner_join(M_Obs_analgesia, Obs_pushing_2ndstage, by="Parity")
+M_pushing %>% 
+  dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_pushing
+
+CreateTableOne(
+  vars = c("CTG"), 
+  strata = "Parity", 
+  data = tab_code, 
+  factorVars = c("Parity")) %>% 
+  print(test = FALSE, 
+        showAllLabels = FALSE, 
+        explain = FALSE, 
+        nonnormal = c("BMI", "MaternalAge"), 
+        printToggle = FALSE) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rowid_to_column(var = "Parity") %>% 
+  select(-c(CTG)) -> Obs_ctg
+Obs_ctg 
+
+M_pushing_ctg <- inner_join(M_pushing, Obs_ctg, by="Parity")
+M_pushing_ctg %>% 
+  dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_pushing_ctg
+
+CreateTableOne(
+  vars = c("Fetalposition"), 
+  strata = "Parity", 
+  data = tab_code, 
+  factorVars = c( "Parity")) %>% 
+  print(test = FALSE, 
+        showAllLabels = FALSE, 
+        explain = FALSE, 
+        nonnormal = c("BMI", "MaternalAge"), 
+        printToggle = FALSE) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  select(-Fetalposition) %>% 
+  rowid_to_column(var = "Parity")-> baby_position
+
+M_pushing_baby <- inner_join(M_pushing, baby_position, by="Parity")
+M_pushing_baby %>% 
+  dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_pushing_baby
+
+CreateTableOne(
+  vars = c("Headcircumference", "Fetalweight"), 
+  strata = "Parity", 
+  data = tab_code, 
+  factorVars = c( "Parity")) %>% 
+  print(
+    test = FALSE, 
+    showAllLabels = FALSE, 
+    explain = FALSE, 
+    nonnormal = c("BMI", "MaternalAge"), 
+    printToggle = FALSE) %>%
+  t() %>%  
+  as.data.frame() %>% 
+  rowid_to_column(var= "Parity")%>% 
+  dplyr::rename(`Head circumference` = `Headcircumference`) %>% 
+  dplyr::rename(`Fetal weight`= `Fetalweight`)-> baby_hc_weight
+
+M_pushing_baby_measure <- inner_join(M_pushing_baby, baby_hc_weight, by = "Parity") 
+M_pushing_baby_measure %>% 
+  dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_pushing_baby_measure
+M_pushing_baby_measure
+
+CreateTableOne(vars = c("APGAR2below7"), strata = "Parity", data = tab_code, factorVars = c( "Parity", "APGAR2below7")) %>% print(test = FALSE, showAllLabels = FALSE, explain = FALSE, nonnormal = c("BMI", "MaternalAge"), printToggle = FALSE) %>% t() %>% as.data.frame() %>% rowid_to_column(var = "Parity") -> Obs_apgar
+
+M_O <- inner_join(M_pushing_baby_measure, Obs_apgar, by="Parity")
+M_O %>% 
+  dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_O
+M_O
+
+CreateTableOne(vars = c("pHNSAbelow7.15"), strata = "Parity", data = tab_code, factorVars = c( "Parity", "pHNSAbelow7.15")) %>% print(test = FALSE, showAllLabels = FALSE, explain = FALSE, nonnormal = c("BMI", "MaternalAge"), printToggle = FALSE) %>% t() %>% as.data.frame() %>% rowid_to_column(var = "Parity") -> Obs_ph
+
+M_O <- inner_join(M_O, Obs_ph, by="Parity")
+M_O %>% 
+  dplyr::rename(`n` = `n.x`) %>% 
+  select(-c("n.y")) -> M_O
+M_O %>% 
+  t(M_O) -> M_O
+@
+
+
+% =======================================
+\section{Research question 2} \label{sec:results}
+% =======================================
+The results of impact factors for Research Question 3 are seen in Table ~\ref{rq2}.
+\begin{table}
+\caption{Maternal Impact Factors}\label{rq2}
+<<rq2, results='asis', echo = TRUE>>=
+knitr::kable(M_O, row.names = FALSE, booktabs = TRUE, format = "latex")
+@
+\end{table}
+Most women are in healthy BMI ranges across all parities and similar to maternal age, increases across parity. A high proportion of women in parity 1 to 3 are caucasian, and 42\% of women in parity 3 are non-caucasian. There are no great differences in the gestational age in weeks. Most births of parity 1 are spontaneous, followed by Spontaneous with Kristeller, then Vacuum. The 2nd stage duration and pushing duration increases with parity. Head circumference is similar across parity, interestingly increases with increase BMI of the mother \ref{tile_bmi}. Apgar and pH levels are generally good across all parities. 
+
+
+<<tab_code_means, include=FALSE, echo=FALSE>>=
+#Data preparation for impact factors
+# table of means for continuous variables
+Filter(is.numeric, tab_code) -> tab_code_n # this is base R
+
+tab_code_n %>% 
+  mutate(all_tears = tab_code$all_tears) -> tab_code_n
+
+tab_code_n %>%  #the reformatted combination
+  mutate(all_tears = factor(tab_code_n$all_tears, levels=c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL", "P1+2P", "EL", "P3+4", "P", "P1+2PV", "PV", "P1+2LP", "PVL", "PL", "EVL", "P3+4E", "P3+4V", "EP", "P3+4EV", "PVE", "P3+4L", "P3+4VL", "P3+4PV"), ordered=TRUE)) -> tab_code_n
+
+#impact factor table of averages and medians
+tab_code_n %>%
+  group_by_at(vars(Parity, all_tears)) %>% 
+  summarise_all(c(mean, sd), na.rm=TRUE) %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  na.omit %>% 
+  as.data.frame() -> tab_code_means
+
+tab_code_n %>%
+  group_by_at(vars(Parity, all_tears)) %>% 
+  summarise_all(median, na.rm=TRUE) %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  na.omit %>% 
+  as.data.frame() -> tab_code_medians
+@
+
+To address further Research Question 3, tile plots were creates to compare each impact factor across parity groups. It is important to note that the Y axis contains the top 28 tear patterns from highest at the bottom to lowest at the top. It is thus important to note the small counts on the lowest frequencies for all the tile plots.
+
+Consistent with \ref{M_O}, \ref{tile_bmi}, \ref{tile_hc}, \ref{tile_w}, BMI, age, fetal weight and head circumference increases across parity. Duration of 2nd stage and Pushing phases also increases with increase parity \ref{tile_pushing} and \ref{tile_duration2nd}.
+\begin{figure}[]
+\caption{The distribution of average BMI across parity 1 to4}\label{tile_bmi}
+\begin{center}
+<<tile_bmi, fig.height=5, fig.width=6>>=
+# BMI
+tab_code_means %>% 
+  ggplot() + 
+  geom_tile(aes(y=all_tears, x = Parity, fill= BMI)) +
+  theme_minimal() +
+  scale_colour_gradient(low= "lightyellow",
+                        high = "pink",
+                        aesthetics = "fill") +
+  geom_text(aes(y=all_tears, x=Parity, label= BMI), size=3, colour="black") +
+  labs(title ="Mean Gestational Age by Parity", x = "Parity", y = "Tear groups", fill="Mean BMI") -> tile_bmi
+tile_bmi
+@ 
+\end{center}
+\end{figure}
+
+
+\begin{figure}[]
+\caption{The distribution of average maternal age across Parity 1 to 4}\label{tile_age}
+\begin{center}
+<<tile_age, fig.height=5, fig.width=6>>=
+tab_code_means %>% # as parity increases, age also increases
+  ggplot() + 
+  geom_tile(aes(y=all_tears, x = Parity, fill= MaternalAge)) +
+  theme_minimal() +
+  scale_colour_gradient(low ="lightyellow",
+                        high = "purple",
+                        aesthetics = "fill") +
+  geom_text(aes(y=all_tears, x=Parity, label=MaternalAge), size=3, colour="black") +
+  labs(title ="Mean Maternal Age by Parity", x = "Parity", y = "Tear Groups", fill="Mean Maternal Age") -> tile_age
+tile_age
+@ 
+\end{center}
+\end{figure}
+
+\begin{figure}[]
+\caption{The distribution of average maternal age across Parity 1 to 4}\label{tile_ge}
+\begin{center}
+<<tile_ge, fig.height=5, fig.width=6>>=
+tab_code_means %>% 
+  ggplot() + 
+  geom_tile(aes(y=all_tears, x = Parity, fill= GestationalAge)) +
+  theme_minimal() +
+  scale_colour_gradient(low= "lightyellow",
+                        high = "darkgrey",
+                        aesthetics = "fill") +
+  geom_text(aes(y=all_tears, x=Parity, label=GestationalAge), size=3, colour="black") +
+  labs(title ="Mean Gestational Age by Parity", x = "Tear Groups", y = "Parity", fill="Mean Gestational Age") -> tile_ge
+tile_ge
+@ 
+\end{center}
+\end{figure}
+
+\begin{figure}[]
+\caption{The distribution of average 2nd stage duration across Parity 1 to 4}\label{fig:pairs}
+\begin{center}
+<<tile_duration2nd, fig.height=5, fig.width=6>>=
+tab_code_means %>% 
+  ggplot() + 
+  geom_tile(aes(y=all_tears, x = Parity, fill= Duration2ndstage)) +
+  theme_minimal() +
+  scale_colour_gradient(low= "lightyellow",
+                        high = "darkgrey",
+                        aesthetics = "fill") +
+  geom_text(aes(y=all_tears, x=Parity, label = Duration2ndstage), size=3, colour="black") +
+  labs(title ="Mean Duration of 2nd Stage by Parity", x = "Parity", y = "Tear Groups", fill ="Mean Duration of 2nd Stage") -> tile_duration2nd
+tile_duration2nd
+@ 
+\end{center}
+\end{figure}
+
+\begin{figure}[]
+\caption{The distribution of average pushing duration across Parity 1 to 4}\label{fig:pairs}
+\begin{center}
+<<tile_pushing, fig.height=5, fig.width=6>>=
+# Pushing Duration
+tab_code_means %>% 
+  ggplot() + 
+  geom_tile(aes(y=all_tears, x = Parity, fill = Pushingduration)) +
+  theme_minimal() +
+  scale_colour_gradient(low= "lightyellow",
+                        high = "darkgrey",
+                        aesthetics = "fill") +
+  geom_text(aes(y = all_tears, x = Parity, label = Pushingduration), size=3, colour="black") +
+  labs(title ="Mean Pushing Duration by Parity", x = "Parity", y = "Tear Groups", fill ="Mean Pushing Duration") -> tile_pushing
+
+
+@ 
+\end{center}
+\end{figure}
+
+\begin{figure}[]
+\caption{The distribution of average head circumference across Parity 1 to 4}\label{tile_hc}
+\begin{center}
+<<tile_hc, fig.height=5, fig.width=6>>=
+tab_code_means %>% 
+  ggplot() + 
+  geom_tile(aes(y = all_tears, x = Parity, fill = Headcircumference)) +
+  theme_minimal() +
+  scale_colour_gradient(low= "lightyellow",
+                        high = "darkgrey",
+                        aesthetics = "fill") +
+  geom_text(aes(y=all_tears, x=Parity, label = Headcircumference), size=3, colour="black") +
+  labs(title ="Mean Head Circumference by Parity", x = "Tear Groups", y = "Parity", fill="Mean Head Circumference") -> tile_hc
+tile_hc
+@ 
+\end{center}
+\end{figure}
+
+
+\begin{figure}[]
+\caption{The distribution of average fetal weight across Parity 1 to 4}\label{tile_w}
+\begin{center}
+<<tile_w, fig.height=5, fig.width=6>>=
+tab_code_means %>% 
+  ggplot() + 
+  geom_tile(aes(y=all_tears, x = Parity, fill = Fetalweight)) +
+  theme_minimal() +
+  scale_colour_gradient(low= "lightyellow",
+                        high = "darkgrey",
+                        aesthetics = "fill") +
+  geom_text(aes(y = all_tears, x = Parity, label = Fetalweight), size=3, colour="black") +
+  labs(title ="Mean Fetal weight by Parity", x = "Parity", y = "Tear Groups", fill="Mean Fetal weight") -> tile_w
+@ 
+\end{center}
+\end{figure}
+
+% =======================================
+\subsection*{Other outcome varialbles} \label{subsec:q1}
+% =======================================
+In ~\ref{tile_bl}, I do not observe any trends in greather or lesser blood loss. 
+\begin{figure}[]
+\caption{The distribution of average blood loss in mL across Parity 1 to 4}\label{tile_bl}
+\begin{center}
+<<tile_bl, fig.height=5, fig.width=6>>=
+tab_code_means %>% 
+  ggplot() + 
+  geom_tile(aes(y=all_tears, x = Parity, fill = Bloodloss)) +
+  theme_minimal() +
+  scale_colour_gradient(low= "lightpink",
+                        high = "darkred",
+                        aesthetics = "fill") +
+  geom_text(aes(y = all_tears, x = Parity, label = Bloodloss), size=3, colour="black") +
+  labs(title ="Mean Blood loss by Parity", x = "Parity", y = "Tear Groups", fill="Mean Blood loss") -> tile_bl
+@ 
+\end{center}
+\end{figure}
+
+<<tab_spaghetti, echo=FALSE>>=
+tab_code_long %>%
+  filter(Parity <=4) -> tab_code_longspaghetti
+
+tab_code_longspaghetti %>% 
+  mutate(all_tears_ordered_spag = factor(tab_code_longspaghetti$all_tears, levels=c("P1+2", "I", "E", "P1+2V", "L", "V", "P1+2L", "VL", "EV", "P1+2VL", "P1+2P", "EL", "P3+4", "P", "P1+2PV", "PV", "P1+2LP", "PVL", "PL", "EVL", "P3+4E", "P3+4V", "EP", "P3+4EV", "PVE", "P3+4L", "P3+4VL", "P3+4PV"), ordered=TRUE)) -> tab_code_longspaghetti
+
+tab_code_longspaghetti %>% 
+  ggplot() + geom_path(aes(x = Parity, y= all_tears_ordered_spag, colour=factor(ID), group=ID)) +
+  theme(legend.position = "none") +
+  labs(y = "All Tears", x = "Parity", title = "Trajectory of Tear groups of subsequent births")
+
+tab_code_longspaghetti %>%
+  ggplot() +
+  geom_path(aes(x = Parity, y= all_tears_ordered_spag, colour=Fetalweight, group = factor(ID))) +
+  theme(legend.position = "right") +
+  scale_colour_gradient(low="lightblue", high="steelblue") +
+  labs(y = "All Tears", x = "Parity", title = "")
+
+tab_code_longspaghetti %>%
+  ggplot() +
+  geom_path(aes(x = Parity, y= all_tears_ordered_spag, colour=Headcircumference, group = factor(ID))) +
+  theme(legend.position = "right") +
+  scale_colour_gradient(low="coral", high="steelblue") +
+  labs(y = "All Tears", x = "Parity", title = "Trajectory of Tear \n groups by fetal weight")
+
+tab_code_longspaghetti %>%
+  ggplot() +
+  geom_path(aes(x = Parity, y= all_tears_ordered_spag, colour=MaternalAge, group = factor(ID))) +
+  theme(legend.position = "right") +
+  scale_colour_gradient(low="coral", high="steelblue") +
+  labs(y = "All Tears", x = "Parity", title = "")
+
+tab_code_longspaghetti %>%
+  ggplot() +
+  geom_path(aes(x = Parity, y= all_tears_ordered_spag, colour=Bloodloss, group = factor(ID))) +
+  theme(legend.position = "right") +
+  scale_colour_gradient(low="lightpink", high="red") +
+  labs(y = "All Tears", x = "Parity", title = "")
+
+tab_code_longspaghetti %>%
+  ggplot() +
+  geom_path(aes(x = Parity, y= all_tears_ordered_spag, colour=Duration2ndstage, group = factor(ID))) +
+  theme(legend.position = "right") +
+  scale_colour_gradient(low="coral", high="steelblue") +
+  labs(y = "All Tears", x = "Parity", title = "")## eva this doesnt work
+
+
+@
+
+% =======================================
+\subsection*{Trajectory of Patients} \label{subsec:q2}
+% =======================================
+The trajectory of patients were assessed with Pushing duration seen in ~\ref{spag_pushing}. There are too many data points to find a trend, except that the top 28 tear patterns seem to be confirmed. 
+\begin{figure}
+\caption{Trajectory of patients and pushing duration}\label{spag_pushing}
+<<hb, results="asis">>=
+tab_code_longspaghetti %>%
+  ggplot() +
+  geom_path(aes(x = Parity, y= all_tears_ordered_spag, colour=Pushingduration, group = factor(ID))) +
+  theme(legend.position = "right") +
+  scale_colour_gradient(low="pink", high="blue") +
+  labs(y = "Tear patterns", x = "Parity", title = "") -> spag_pushing
+spag_pushing
+
+@
+\end{figure}
+% =======================================
+\subsection*{Factors Affecting Survival of Patients Receiving Therapy B} \label{subsec:q3}
+% =======================================
+
+
+% =======================================
+\section{Conclusion} \label{sec:conclusion}
+% =======================================
+The frequency and distribution of tear groups in births is a complex assessment to make. For Research Question 1, since there are 28 different tear groups, birth lacerations according to parity were assessed for the most common 10 tear groups in parity 1 to 4. In all of our assessments and for Research Question 3, births of higher parity tend to have a higher proportion of intact tears or no tears, even though counts of births decreases per parity. P1+2 tears are most common and women who are predisposed to these tears tend to repeat them in subsequent parity and or have intact tears. For Research Question 2, many impact factors were assessed against parity. A common trend cannot be said for any particular tear types and furthermore, small counts representing each cell render its validity and generalisability weak. Thus a limitation of this study is the low birth counts at less frequent tear patterns. However, a start on how we can understand the frequency and distribution has been created in a manner clinicians yet seen in the literature. 
+
+
+% =======================================
+% \section{References} \label{sec:ref}
+% =======================================
+\nocite{R}
+
+\bibliography{consulting}
+
+
+\vfill
+
+\footnotesize
+
+<<rdetails, echo = FALSE, echo = FALSE>>=
+# Base packages:
+s <- sessionInfo()
+s1 <- s$basePkgs[1]
+for (i in 2:length(s$basePkgs)){s1 <- paste(s1, ", ", s$basePkgs[i], sep = "")}
+
+# Other Packages:
+pack.info <- installed.packages()
+output.packages <- data.frame(pack.info[names(s$otherPkgs) ,c("Package",
+"Version")])
+
+s2 <- paste(names(s$otherPkgs)[1],
+output.packages[names(s$otherPkgs)[1], "Version"])
+k <- length(names(s$otherPkgs))
+if(k>1) for (i in 2:k){s2 <- paste(s2, ", ",
+paste(names(s$otherPkgs)[i], output.packages[names(s$otherPkgs)[i],
+"Version"]), sep = "")}
+@
+
+
+\vfill
+
+\footnotesize{{\bf \prog{R} version and packages used to generate this report:}
+
+\prog{R} version: \textsf{\Sexpr{s$R.version$version.string}}
+
+Base packages: \textsf{\Sexpr{s1}}
+
+Other packages: \textsf{\Sexpr{s2}}
+
+This document was generated on \Sexpr{format(Sys.time(), "%B %d, %Y at %H:%M")}.
+
+\pagebreak
+
+% =======================================
+\section{Appendix} \label{sec:app}
+% =======================================
+Please provide ALL code with which you produced this report by code chunk reuse, i.e.\ name all your chunks and display them here by typing \texttt{<<chunkname>>}. Include comments to indicate which section the chunks were used in
+<<appendix,eval=FALSE, echo=TRUE>>=
+####### code for packages, settings, data prep
+<<setup>>
+
+####### code for results: descriptive results
+<<conttable>>
+<<pairsplot>>
+  
+####### code for results: first research question
+<<alllm>>
+
+####### code for results: second research question
+  <<xtable>>
+@
+\end{document}
+
+
+
+
+
+
